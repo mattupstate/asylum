@@ -10,6 +10,12 @@ from flask import g
 from werkzeug.local import LocalProxy
 
 current_identity = LocalProxy(lambda: g._current_identity)
+current_authorization_ctx = LocalProxy(lambda: g._current_authorization_ctx)
+
+Everyone = 'Everyone'
+Authenticated = 'Authenticated'
+Allow = 'Allow'
+Deny = 'Deny'
 
 
 class Asylum(object):
@@ -26,9 +32,11 @@ class Asylum(object):
     case the identity has been provided by a client and isn't necessarily trusted.
     """
 
-    def __init__(self, app=None, identity_policy=None):
+    def __init__(self, app=None, identity_policy=None, authorization_policy=None):
         self.app = app
         self._identity_policy = identity_policy
+        self._authorization_policy = authorization_policy
+
         if self.app:
             self.init_app(self.app)
 
@@ -55,8 +63,17 @@ class Asylum(object):
     def identity_policy(self, value):
         self._identity_policy = value
 
+    @property
+    def authorization_policy(self):
+        return self._authorization_policy
+
+    @authorization_policy.setter
+    def authorization_policy(self, value):
+        self._authorization_policy = value
+
     def _before_request(self):
-        self._set_identity(self.identity_policy.identify())
+        identity = self.identity_policy.identify()
+        self._set_identity(identity)
 
     def _after_request(self, response):
         if g._current_identity:
@@ -73,4 +90,3 @@ class Asylum(object):
         except TypeError:
             identity = None
         g._current_identity = identity
-
