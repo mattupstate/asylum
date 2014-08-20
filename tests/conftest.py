@@ -28,4 +28,20 @@ def client(app):
 
 @pytest.fixture()
 def asylum(app):
-    return Asylum(app)
+    asylum = Asylum(app)
+
+    @app.route('/login')
+    def login():
+        asylum.remember('abc123')
+        return "logged in"
+
+    @app.route('/logout')
+    def logout():
+        asylum.forget()
+        return "logged out"
+
+    @app.route('/')
+    def index():
+        return 'index'
+
+    return asylum

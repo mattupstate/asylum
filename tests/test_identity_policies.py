@@ -15,20 +15,6 @@ from flask_asylum import current_identity, SessionIdentityPolicy, RememberMeCook
 
 
 def test_session_policy(app, client, asylum):
-    @app.route('/login')
-    def login():
-        asylum.remember('abc123')
-        return "logged in"
-
-    @app.route('/logout')
-    def logout():
-        asylum.forget()
-        return "logged out"
-
-    @app.route('/')
-    def index():
-        return 'index'
-
     asylum.identity_policy = SessionIdentityPolicy()
 
     with client as c:
@@ -52,20 +38,6 @@ def test_session_policy(app, client, asylum):
 
 
 def test_remember_me_cookie_policy(app, client, asylum):
-    @app.route('/login')
-    def login():
-        asylum.remember('abc123')
-        return 'logged in'
-
-    @app.route('/logout')
-    def logout():
-        asylum.forget()
-        return "logged out"
-
-    @app.route('/')
-    def index():
-        return 'index'
-
     asylum.identity_policy = RememberMeCookieIdentityPolicy('secret')
 
     with client as c:
@@ -88,10 +60,6 @@ def test_remember_me_cookie_policy(app, client, asylum):
 
 
 def test_http_basic_auth_policy(app, client, asylum):
-    @app.route('/')
-    def index():
-        return 'index'
-
     asylum.identity_policy = BasicAuthIdentityPolicy()
 
     with client as c:
@@ -106,20 +74,6 @@ def test_http_basic_auth_policy(app, client, asylum):
 
 
 def test_multi_policy(app, client, asylum):
-    @app.route('/login')
-    def login():
-        asylum.remember('abc123')
-        return 'logged in'
-
-    @app.route('/logout')
-    def logout():
-        asylum.forget()
-        return "logged out"
-
-    @app.route('/')
-    def index():
-        return 'index'
-
     asylum.identity_policy = MultiIdentityPolicy([
         SessionIdentityPolicy(),
         RememberMeCookieIdentityPolicy('secret')
