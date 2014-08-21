@@ -10,6 +10,8 @@ from flask import g
 from werkzeug.local import LocalProxy
 from werkzeug.utils import cached_property
 
+from .identity import Identity
+
 current_identity = LocalProxy(lambda: g._current_identity)
 current_authorization_ctx = LocalProxy(lambda: g._current_authorization_ctx)
 
@@ -17,18 +19,6 @@ Everyone = 'Everyone'
 Authenticated = 'Authenticated'
 Allow = 'Allow'
 Deny = 'Deny'
-
-
-class Identity(object):
-
-    def __init__(self, user_id, credentials=None):
-        self.user_id = user_id
-        self.credentials = credentials
-
-    @cached_property
-    def user_object(self):
-        raise NotImplementedError
-
 
 
 class Asylum(object):

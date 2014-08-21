@@ -22,6 +22,26 @@ REMEMBER_COOKIE_DOMAIN = None
 REMEMBER_COOKIE_DURATION = timedelta(days=365)
 
 
+class Identity(object):
+    """An object that represents an identity. An identity, at the minimum, consists of a unique
+    identifier of a client of the application. A client can be near anything you can think of that
+    can be identified by some attribute in an HTTP request. For example, a username, an email
+    address, an database row ID, an IP address etc. This unique identifier is abstracted as the
+    `user_id` property. Additionally, an identity may require some sort of supporting information
+    to verify the client is who they say they are. The most basic and perhaps obvious example would
+    be the password. This information is abstracted as the `credentials` property. This property
+    can contain anything to support the identity and is up to the `IdentitiyPolicy`.
+    """
+
+    def __init__(self, user_id, credentials=None):
+        self.user_id = user_id
+        self.credentials = credentials
+
+    @cached_property
+    def user_object(self):
+        raise NotImplementedError
+
+
 class IdentityPolicy(object):
     """And object representing an identity policy.
     """
