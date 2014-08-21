@@ -78,10 +78,9 @@ class RememberMeCookieIdentityPolicy(IdentityPolicy):
             return self._decode_cookie(cookie)
 
     def remember(self, response, identity, **kwargs):
-        user_id, _ = identity
         expires = datetime.utcnow() + self._duration
-        response.set_cookie(self._name, value=self._encode_cookie(user_id), expires=expires,
-                            domain=self._domain, secure=True, httponly=True)
+        response.set_cookie(self._name, value=self._encode_cookie(identity.user_id),
+                            expires=expires, domain=self._domain, secure=True, httponly=True)
 
     def forget(self, response):
         response.delete_cookie(self._name, domain=self._domain)
@@ -98,8 +97,7 @@ class SessionIdentityPolicy(IdentityPolicy):
         return session.get(self._session_key, None)
 
     def remember(self, response, identity, **kwargs):
-        user_id, _ = identity
-        session[self._session_key] = user_id
+        session[self._session_key] = identity.user_id
 
     def forget(self, response):
         session.pop(self._session_key, None)

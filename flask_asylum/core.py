@@ -8,6 +8,7 @@
 
 from flask import g
 from werkzeug.local import LocalProxy
+from werkzeug.utils import cached_property
 
 current_identity = LocalProxy(lambda: g._current_identity)
 current_authorization_ctx = LocalProxy(lambda: g._current_authorization_ctx)
@@ -16,6 +17,18 @@ Everyone = 'Everyone'
 Authenticated = 'Authenticated'
 Allow = 'Allow'
 Deny = 'Deny'
+
+
+class Identity(object):
+
+    def __init__(self, user_id, credentials=None):
+        self.user_id = user_id
+        self.credentials = credentials
+
+    @cached_property
+    def user_object(self):
+        raise NotImplementedError
+
 
 
 class Asylum(object):
@@ -53,7 +66,7 @@ class Asylum(object):
     def forget(self):
         """Invalidate the current identity.
         """
-        g._current_identity = None
+        self._set_identity(None)
 
     @property
     def identity_policy(self):
@@ -83,10 +96,12 @@ class Asylum(object):
         return response
 
     def _set_identity(self, identity):
-        try:
-            user_id, _ = identity
-        except ValueError:
-            identity = (identity, None)
-        except TypeError:
-            identity = None
+        if identity:
+            if isinstance(identity, (list, tuple)):
+                credentials = identity[1:]
+                if len(credentials) == 1:
+                    credentials = credentials[0]
+                identity = Identity(identity[:1][0], credentials=credentials)
+            else:
+                identity = Identity(identity)
         g._current_identity = identity
