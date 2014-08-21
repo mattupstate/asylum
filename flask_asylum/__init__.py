@@ -6,6 +6,7 @@
     Flask-Asylum top level package
 """
 
-from .core import Asylum, current_identity
+from .authorization import AuthorizationPolicy, MultiAuthorizationPolicy
+from .core import Asylum, Identity, current_identity
 from .identity import SessionIdentityPolicy, RememberMeCookieIdentityPolicy, \
     BasicAuthIdentityPolicy, MultiIdentityPolicy

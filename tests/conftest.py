@@ -9,7 +9,7 @@
 import pytest
 
 from flask import Flask
-from flask_asylum.core import Asylum
+from flask_asylum.core import Asylum, Identity
 
 
 @pytest.fixture()
@@ -31,8 +31,14 @@ def asylum(app):
     asylum = Asylum(app)
 
     @app.route('/login')
-    def login():
-        asylum.remember('abc123')
+    @app.route('/login/mary')
+    def login_mary():
+        asylum.remember('mary')
+        return "logged in"
+
+    @app.route('/login/tina')
+    def login_tina():
+        asylum.remember('tina')
         return "logged in"
 
     @app.route('/logout')
