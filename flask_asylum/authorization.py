@@ -16,7 +16,7 @@ class AuthorizationPolicy(object):
       """An object representing an authorization policy.
       """
 
-      def permits(self, context, identity, permission):
+      def permits(self, identity, permission, context=None):
           """Return `True` if the identity is allowed the permission in the current context,
           else return `False`.
           """
@@ -34,7 +34,7 @@ class MultiAuthorizationPolicy(AuthorizationPolicy):
     def __init__(self, policies):
         self._policies = policies or []
 
-    def permits(self, context, identity, permission):
+    def permits(self, identity, permission, context=None):
         for policy in self._policies:
             if policy.permits(context, identity, permission):
                 return True
