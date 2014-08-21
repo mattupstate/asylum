@@ -13,6 +13,7 @@ from hashlib import sha1
 
 from flask import request, session
 from werkzeug.security import safe_str_cmp
+from werkzeug.utils import cached_property
 
 from .exceptions import AuthenticationError
 

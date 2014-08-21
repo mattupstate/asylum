@@ -8,17 +8,13 @@
 
 from flask import g
 from werkzeug.local import LocalProxy
-from werkzeug.utils import cached_property
 
 from .identity import Identity
 
 current_identity = LocalProxy(lambda: g._current_identity)
 current_authorization_ctx = LocalProxy(lambda: g._current_authorization_ctx)
 
-Everyone = 'Everyone'
-Authenticated = 'Authenticated'
-Allow = 'Allow'
-Deny = 'Deny'
+
 
 
 class Asylum(object):
@@ -34,6 +30,11 @@ class Asylum(object):
     Flask-Asylum. Two such examples are a signed cookie or a client session property. In the second
     case the identity has been provided by a client and isn't necessarily trusted.
     """
+
+    Everyone = 'Everyone'
+    Authenticated = 'Authenticated'
+    Allow = 'Allow'
+    Deny = 'Deny'
 
     def __init__(self, app=None, identity_policy=None, authorization_policy=None):
         self.app = app
@@ -57,6 +58,12 @@ class Asylum(object):
         """Invalidate the current identity.
         """
         self._set_identity(None)
+
+    def acl(self, rules):
+        def decorator(fn):
+            fn.__acl__ = rules
+            return fn
+        return decorator
 
     @property
     def identity_policy(self):

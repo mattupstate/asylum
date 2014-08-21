@@ -44,3 +44,18 @@ def test_custom_authorization_policy(app, client, asylum):
     with client as c:
         c.get('/login/tina')
         assert not asylum.authorization_policy.permits(current_identity, 'delete')
+
+
+def test_acl_decorator(app, client, asylum):
+    asylum.identity_policy = SessionIdentityPolicy()
+    asylum.authorization_policy = DictionaryAuthorizationPolicy()
+
+    @app.route('/allow')
+    @asylum.acl([
+        (asylum.Allow, '*', '*')
+    ])
+    def allow():
+        return 'allow'
+
+    with client as c:
+        c.get('/allow')
