@@ -31,11 +31,6 @@ class Asylum(object):
     case the identity has been provided by a client and isn't necessarily trusted.
     """
 
-    Everyone = 'Everyone'
-    Authenticated = 'Authenticated'
-    Allow = 'Allow'
-    Deny = 'Deny'
-
     def __init__(self, app=None, identity_policy=None, authorization_policy=None):
         self.app = app
         self._identity_policy = identity_policy
@@ -59,12 +54,6 @@ class Asylum(object):
         """
         self._set_identity(None)
 
-    def acl(self, rules):
-        def decorator(fn):
-            fn.__acl__ = rules
-            return fn
-        return decorator
-
     @property
     def identity_policy(self):
         return self._identity_policy
@@ -82,8 +71,7 @@ class Asylum(object):
         self._authorization_policy = value
 
     def _before_request(self):
-        identity = self.identity_policy.identify()
-        self._set_identity(identity)
+        self._set_identity(self.identity_policy.identify())
 
     def _after_request(self, response):
         if g._current_identity:
