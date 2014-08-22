@@ -44,7 +44,11 @@ class ACL(object):
         return acl
 
     def _get_current_acl(self):
+        root_acl = getattr(current_app, '__acl__', self.default_acl)
+        blueprint_acl = None
+        if request.blueprint:
+            blueprint_acl = getattr(current_app.blueprints[request.blueprint], '__acl__', None)
         view_acl = getattr(current_app.view_functions[request.endpoint], '__acl__', None)
-        return view_acl or getattr(current_app, '__acl__', self.default_acl)
+        return view_acl or blueprint_acl or root_acl
 
 
