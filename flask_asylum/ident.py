@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
 """
-    flask_asylum.identity
-    ~~~~~~~~~~~~~~~~~~~~~
+    flask_asylum.ident
+    ~~~~~~~~~~~~~~~~~~
 
-    Stock identity polcies
+    Stock identity providers
 """
 
 import hmac
@@ -13,9 +13,10 @@ from hashlib import sha1
 
 from flask import request, session
 from werkzeug.security import safe_str_cmp
-from werkzeug.utils import cached_property
+from werkzeug.formparser import FormDataParser
 
-from .exceptions import AuthenticationError
+from . import _compat
+from .core import Authentication
 
 IDENTITY_SESSION_KEY = 'identity'
 REMEMBER_COOKIE_NAME = '_remember_me'
@@ -23,27 +24,7 @@ REMEMBER_COOKIE_DOMAIN = None
 REMEMBER_COOKIE_DURATION = timedelta(days=365)
 
 
-class Identity(object):
-    """An object that represents an identity. An identity, at the minimum, consists of a unique
-    identifier of a client of the application. A client can be near anything you can think of that
-    can be identified by some attribute in an HTTP request. For example, a username, an email
-    address, an database row ID, an IP address etc. This unique identifier is abstracted as the
-    `user_id` property. Additionally, an identity may require some sort of supporting information
-    to verify the client is who they say they are. The most basic and perhaps obvious example would
-    be the password. This information is abstracted as the `credentials` property. This property
-    can contain anything to support the identity and is up to the `IdentitiyPolicy`.
-    """
-
-    def __init__(self, user_id, credentials=None):
-        self.user_id = user_id
-        self.credentials = credentials
-
-    @cached_property
-    def user_object(self):
-        raise NotImplementedError
-
-
-class IdentityPolicy(object):
+class IdentityProvider(object):
     """And object representing an identity policy.
     """
 
@@ -63,51 +44,52 @@ class IdentityPolicy(object):
         raise NotImplementedError
 
 
-class RememberMeCookieIdentityPolicy(IdentityPolicy):
+class RememberMeCookieIdentityProvider(IdentityProvider):
     """A "remember me" cookie identity policy. This identity policy loads an identity from a signed
     cookie if it exists.
     """
 
     def __init__(self, secret_key, name=None, domain=None, duration=None):
-        if isinstance(secret_key, unicode):  # pragma: no cover
+        if isinstance(secret_key, _compat.text_type):  # pragma: no cover
             secret_key = secret_key.encode('latin1')  # ensure bytes
         self._secret_key = secret_key
         self._name = name or REMEMBER_COOKIE_NAME
         self._domain = domain or REMEMBER_COOKIE_DOMAIN
         self._duration = duration or REMEMBER_COOKIE_DURATION
 
-    def _cookie_digest(self, user_id):
-        return hmac.new(self._secret_key, user_id.encode('utf-8'), sha1).hexdigest()
+    def _cookie_digest(self, value):
+        return hmac.new(self._secret_key, value.encode('utf-8'), sha1).hexdigest()
 
-    def _encode_cookie(self, user_id):
-        return u'{0}|{1}'.format(user_id, self._cookie_digest(user_id))
+    def _encode_cookie(self, value):
+        return u'{0}|{1}'.format(value, self._cookie_digest(value))
 
     def _decode_cookie(self, cookie):
         try:
-            user_id, digest = cookie.rsplit(u'|', 1)
+            value, digest = cookie.rsplit(u'|', 1)
             if hasattr(digest, 'decode'):
                 digest = digest.decode('ascii')  # pragma: no cover
         except ValueError:
             return
 
-        if safe_str_cmp(self._cookie_digest(user_id), digest):
-            return user_id
+        if safe_str_cmp(self._cookie_digest(value), digest):
+            return value
 
     def identify(self):
         cookie = request.cookies.get(self._name, None)
         if cookie:
-            return self._decode_cookie(cookie)
+            return Authentication(self._decode_cookie(cookie), None)
 
     def remember(self, response, identity, **kwargs):
         expires = datetime.utcnow() + self._duration
-        response.set_cookie(self._name, value=self._encode_cookie(identity.user_id),
-                            expires=expires, domain=self._domain, secure=True, httponly=True)
+        response.set_cookie(
+            self._name, value=self._encode_cookie(identity.uid),
+            expires=expires, domain=self._domain, secure=True, httponly=True)
 
     def forget(self, response):
         response.delete_cookie(self._name, domain=self._domain)
 
 
-class SessionIdentityPolicy(IdentityPolicy):
+class SessionIdentityProvider(IdentityProvider):
     """A session identity policy. This policy loads the identity from the session if it exists.
     """
 
@@ -115,16 +97,17 @@ class SessionIdentityPolicy(IdentityPolicy):
         self._session_key = session_key or IDENTITY_SESSION_KEY
 
     def identify(self):
-        return session.get(self._session_key, None)
+        if self._session_key in session:
+            return Authentication(session[self._session_key], None)
 
     def remember(self, response, identity, **kwargs):
-        session[self._session_key] = identity.user_id
+        session[self._session_key] = identity.uid
 
     def forget(self, response):
         session.pop(self._session_key, None)
 
 
-class AuthorizationHeaderIdentityPolicy(IdentityPolicy):
+class AuthorizationHeaderIdentityProvider(IdentityProvider):
     """A base identity policy for `Authorization` header identity policies.
     """
 
@@ -146,7 +129,8 @@ class AuthorizationHeaderIdentityPolicy(IdentityPolicy):
     def identify(self):
         auth = request.headers.get('Authorization', '')
         if auth and self._validate_header(auth):
-            return self._decode_header(auth)
+            username, password = self._decode_header(auth)
+            return Authentication(username, password)
 
     def remember(self, *args, **kwargs):
         pass
@@ -156,13 +140,13 @@ class AuthorizationHeaderIdentityPolicy(IdentityPolicy):
         response.headers['WWW-Authenticate'] = '%s realm=%s' % ctx
 
 
-class BasicAuthIdentityPolicy(AuthorizationHeaderIdentityPolicy):
+class BasicAuthIdentityProvider(AuthorizationHeaderIdentityProvider):
     """HTTP Basic authentication identity policy. This identity policy retrieves an untrusted
     username and password pair from a request.
     """
 
     def __init__(self, realm=None):
-        AuthorizationHeaderIdentityPolicy.__init__(self, 'Basic', realm)
+        AuthorizationHeaderIdentityProvider.__init__(self, 'Basic', realm)
 
     def _decode_header(self, *args):
         auth = request.authorization
@@ -170,16 +154,56 @@ class BasicAuthIdentityPolicy(AuthorizationHeaderIdentityPolicy):
             return auth.username, auth.password
 
 
-class MultiIdentityPolicy(IdentityPolicy):
+class UsernamePasswordIdentityProvider(IdentityProvider):
+
+    def __init__(self, uid_field='username', credentials_field='password'):
+        self._uid_field = uid_field
+        self._credentials_field = credentials_field
+
+    def _get_identity_parts(self):
+        raise NotImplementedError
+
+    def identify(self):
+        parts = self._get_identity_parts()
+        if parts:
+            return Authentication(*parts)
+
+
+class LoginFormIdentityProvider(UsernamePasswordIdentityProvider):
+
+    def __init__(self, endpoint='login', **kwargs):
+        super(LoginFormIdentityProvider, self).__init__(**kwargs)
+        self._endpoint = endpoint
+
+    def _parse_request(self):
+        if request.mimetype in FormDataParser.parse_functions:
+            return (request.form.get(self._uid_field),
+                    request.form.get(self._credentials_field))
+
+    def _get_identity_parts(self):
+        if request.method == 'POST' and request.endpoint == self._endpoint:
+            return self._parse_request()
+
+
+class JsonLoginFormIdentityProvider(LoginFormIdentityProvider):
+
+    def _parse_request(self):
+        mt = request.mimetype
+        if mt == 'application/json' or (mt.startswith('application/') and mt.endswith('+json')):
+            data = request.get_json()
+            return data.get(self._uid_field), data.get(self._credentials_field)
+
+
+class MultiIdentityProvider(IdentityProvider):
     """An identity policy implementation that allows one to specify a list of policies to be
     checked, in order, and selecting the first identity to be found. For example, this allows one
-    to use `SessionIdentityPolicy` and `RememberMeCookieIdentityPolicy` together.
+    to use `SessionIdentityProvider` and `RememberMeCookieIdentityProvider` together.
     """
 
     def __init__(self, policies=None):
         self._policies = policies or []
 
-    def add_policy(self, policy, index=None):
+    def add_provider(self, policy, index=None):
         if index:
             self._policies.insert(index, policy)
         else:

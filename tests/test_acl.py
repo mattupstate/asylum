@@ -8,52 +8,51 @@
 
 from flask import abort
 
-from flask_asylum import ACL, AuthorizationPolicy, SessionIdentityPolicy, current_identity
-from flask_asylum.acl import Allow, Read, Any
+from flask_asylum import acl
+from flask_asylum.authz import AuthorizationProvider
+from flask_asylum.ident import SessionIdentityProvider
 
 
-class PrincipaledDictionaryAuthorizationPolicy(AuthorizationPolicy):
-    def __init__(self, acl):
-        self._acl = acl
-        self._users = {
-            'mary': {'groups': ['admin', 'editor']},
-            'tina': {'groups': ['editor']}
+class PrincipaledDictionaryAuthorizationProvider(AuthorizationProvider):
+    def __init__(self):
+        self._user_groups = {
+            'mary': ['admin', 'editor'],
+            'tina': ['editor']
         }
 
-    def permits(self, identity, permission, context=None):
-        user =  self._users.get(identity.user_id, None)
-        if user is None:
-            return False
+    def can(self, identity, permission, **kwargs):
+        groups = self._user_groups[identity.uid]
 
-        principals = ['user:' + identity.user_id] + ['group:' + g for g in user.get('groups', [])]
-        return self._acl.permits(principals, permission)
-
-    def authorized_userid(self, identity):
-        if identity.user_id in self._users:
-            return identity.user_id
+        principals = [
+            'user:' + identity.uid
+        ] + [
+            'group:' + g for g in groups
+        ]
+        return acl.can(principals, permission, **kwargs)
 
 
 def test_acl_decorator(app, client, asylum):
-    acl = ACL()
+    asylum.identity_provider = SessionIdentityProvider()
+    asylum.authz_provider = PrincipaledDictionaryAuthorizationProvider()
 
-    asylum.identity_policy = SessionIdentityPolicy()
-    asylum.authorization_policy = PrincipaledDictionaryAuthorizationPolicy(acl)
+    class MockObj(object):
+        __acl__ = [
+            (acl.Allow, 'group:admin', acl.Read)
+        ]
 
-    @app.route('/allow')
-    @acl.protected_by((Allow, 'group:admin', Read))
-    def allow():
-        if asylum.authorization_policy.permits(current_identity, Read):
-            return 'allow'
-        else:
-            abort(401)
+    @app.route('/protected')
+    def protected():
+        if asylum.can(acl.Read, obj=MockObj):
+            return 'protected'
+        abort(401)
 
-    client.get('/login/mary')
+    client.get('/login?user=mary')
 
     with client as c:
-        response = c.get('/allow')
+        response = c.get('/protected')
         assert response.status_code == 200
 
-    client.get('/login/tina')
+    client.get('/login?user=tina')
     with client as c:
-        response = c.get('/allow')
+        response = c.get('/protected')
         assert response.status_code == 401

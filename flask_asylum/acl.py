@@ -6,49 +6,64 @@
     ACL module
 """
 
-from flask import g, current_app, request
+from collections import Container, Callable
 
-Everyone = 'Everyone'
-Authenticated = 'Authenticated'
+from . import _compat
+
+# States
 Allow = 'Allow'
 Deny = 'Deny'
+
+# Principals
+Everyone = 'Everyone'
+Anonymous = 'Anonymous'
+Authenticated = 'Authenticated'
+
+# Permissions
+Read = 'Read'
 Read = 'Read'
 Write = 'Write'
 Delete = 'Delete'
-Any = [Read, Write, Delete]
-
-class ACL(object):
-
-    default_acl = (Deny, Everyone, Any)
-
-    def protected_by(self, *rules):
-        def decorator(obj):
-            obj.__acl__ = rules
-            return obj
-        return decorator
-
-    def permits(self, principals, permission):
-        if self.current_acl is None:
-            return False
-
-        for ace in self.current_acl:
-            ace_action, ace_principal, ace_permissions = ace
-            if ace_principal in principals and permission in ace_permissions:
-                return ace_action == Allow
-
-    @property
-    def current_acl(self):
-        acl = getattr(g, '_current_acl', None)
-        if acl is None:
-            acl = g._current_acl = self._get_current_acl()
-        return acl
-
-    def _get_current_acl(self):
-        root_acl = getattr(current_app, '__acl__', self.default_acl)
-        blueprint_acl = None
-        if request.blueprint:
-            blueprint_acl = getattr(current_app.blueprints[request.blueprint], '__acl__', None)
-        view_acl = getattr(current_app.view_functions[request.endpoint], '__acl__', None)
-        return view_acl or blueprint_acl or root_acl
+All = lambda _: True
 
 
+def walk(obj):
+    while obj is not None:
+        yield obj
+        try:
+            obj = obj.__parent__
+        except AttributeError:
+            obj = None
+
+
+def has_permission(permission, permissions):
+    if isinstance(permissions, _compat.string_types + (_compat.text_type,)):
+        return permission == permissions
+    elif isinstance(permissions, Container):
+        return permission in permissions
+    elif isinstance(permissions, Callable):
+        return permissions(permission)
+    else:
+        raise TypeError('permissions must be a string, container, or callable')
+
+
+def can(principals, permission, obj):
+    for obj in walk(obj):
+        try:
+            acl = obj.__acl__
+        except AttributeError:
+            continue
+
+        if isinstance(acl, Callable):
+            acl = acl()
+
+        for ace in acl:
+            try:
+                action, principal, permissions = ace
+            except ValueError:
+                raise ValueError('ACL entry must be a three length tuple')
+
+            if principal in principals and has_permission(permission, permissions):
+                return action == Allow
+
+    return False

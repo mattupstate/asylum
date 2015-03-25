@@ -8,8 +8,9 @@
 
 import pytest
 
-from flask import Flask
-from flask_asylum.core import Asylum, Identity
+from flask import Flask, request
+from flask_asylum.core import Asylum, Authentication
+from flask_asylum.authn import CollectionAuthenticationProvider
 
 
 @pytest.fixture()
@@ -29,21 +30,18 @@ def client(app):
 @pytest.fixture()
 def asylum(app):
     asylum = Asylum(app)
+    asylum.authn_provider = CollectionAuthenticationProvider({'mary', 'tina'})
 
     @app.route('/login')
-    @app.route('/login/mary')
-    def login_mary():
-        asylum.remember('mary')
-        return "logged in"
-
-    @app.route('/login/tina')
-    def login_tina():
-        asylum.remember('tina')
-        return "logged in"
+    def login():
+        if 'user' in request.args:
+            asylum.set_identity(Authentication(request.args['user'], None, True))
+            return 'logged in'
+        return 'login error', 400
 
     @app.route('/logout')
     def logout():
-        asylum.forget()
+        asylum.set_identity(None)
         return "logged out"
 
     @app.route('/')

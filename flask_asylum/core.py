@@ -6,21 +6,37 @@
     Core Flask-Asylum package
 """
 
-from flask import g
+from flask import current_app, has_request_context, _request_ctx_stack
 from werkzeug.local import LocalProxy
 
-from .identity import Identity
+from . import acl
 
-current_identity = LocalProxy(lambda: g._current_identity)
-current_authorization_ctx = LocalProxy(lambda: g._current_authorization_ctx)
+current_identity = LocalProxy(lambda: _get_identity())
 
 
+def _get_identity():
+    if has_request_context() and not hasattr(_request_ctx_stack.top, 'identity'):
+        current_app.extensions['asylum']._load_identity()
+    return _request_ctx_stack.top.identity
+
+
+class Authentication(object):
+
+    def __init__(self, uid, credentials=None, authenticated=False, details=None):
+        self.uid = uid
+        self.credentials = credentials
+        self.authenticated = authenticated
+        self.details = details
+
+    def __repr__(self):
+        return 'Authentication(uid=%r, credentials=%r, authenticated=%r, details=%r)' % (
+            self.uid, self.credentials, self.authenticated, self.details)
 
 
 class Asylum(object):
     """The Flask-Asylum extension class provides an API for configuring an application with a
-    desired identity policy. Additionally, it provides an API to remember or forget the current
-    identity so that it may be retreived later if the identity policy supports it. An "identity"
+    desired identity provider. Additionally, it provides an API to remember or forget the current
+    identity so that it may be retreived later if the identity provider supports it. An "identity"
     as known by Flask-Asylum takes two forms:
 
     1. A tuple containing a unique user id followed by `None`: ('abc123', None)
@@ -31,62 +47,42 @@ class Asylum(object):
     case the identity has been provided by a client and isn't necessarily trusted.
     """
 
-    def __init__(self, app=None, identity_policy=None, authorization_policy=None):
+    def __init__(self, app=None, identity_provider=None, authn_provider=None,
+                 authz_provider=None, anonymous_identity=None):
         self.app = app
-        self._identity_policy = identity_policy
-        self._authorization_policy = authorization_policy
+        self.identity_provider = identity_provider
+        self.authz_provider = authz_provider
+        self.authn_provider = authn_provider
+        self.anonymous_identity = anonymous_identity or Authentication(acl.Anonymous)
 
         if self.app:
             self.init_app(self.app)
 
     def init_app(self, app):
-        app.before_request(self._before_request)
         app.after_request(self._after_request)
+        if not hasattr(app, 'extensions'):
+            app.extensions = {}
+        app.extensions['asylum'] = self
 
-    def remember(self, identity):
-        """Persist the identity to be loaded on subsequent requests.
-        :param identity: The identity of the user
-        """
-        self._set_identity(identity)
+    def can(self, permission, identity=None, **kwargs):
+        identity = identity or current_identity
+        return self.authz_provider.can(identity, permission, **kwargs)
 
-    def forget(self):
-        """Invalidate the current identity.
-        """
-        self._set_identity(None)
+    def cannot(self, *args, **kwargs):
+        return not self.can(*args, **kwargs)
 
-    @property
-    def identity_policy(self):
-        return self._identity_policy
+    def set_identity(self, identity):
+        _request_ctx_stack.top.identity = identity or self.anonymous_identity
 
-    @identity_policy.setter
-    def identity_policy(self, value):
-        self._identity_policy = value
-
-    @property
-    def authorization_policy(self):
-        return self._authorization_policy
-
-    @authorization_policy.setter
-    def authorization_policy(self, value):
-        self._authorization_policy = value
-
-    def _before_request(self):
-        self._set_identity(self.identity_policy.identify())
+    def _load_identity(self):
+        identity = self.identity_provider.identify()
+        if identity and self.authn_provider:
+            identity = self.authn_provider.authenticate(identity)
+        self.set_identity(identity)
 
     def _after_request(self, response):
-        if g._current_identity:
-            self._identity_policy.remember(response, g._current_identity)
+        if current_identity.authenticated:
+            self.identity_provider.remember(response, current_identity)
         else:
-            self._identity_policy.forget(response)
+            self.identity_provider.forget(response)
         return response
-
-    def _set_identity(self, identity):
-        if identity:
-            if isinstance(identity, (list, tuple)):
-                credentials = identity[1:]
-                if len(credentials) == 1:
-                    credentials = credentials[0]
-                identity = Identity(identity[:1][0], credentials=credentials)
-            else:
-                identity = Identity(identity)
-        g._current_identity = identity
