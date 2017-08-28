@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
-    flask_asylum.acl
-    ~~~~~~~~~~~~~~~~
+    asylum.acl
+    ~~~~~~~~~~
 
     ACL module
 """
@@ -16,15 +16,13 @@ Deny = 'Deny'
 
 # Principals
 Everyone = 'Everyone'
-Anonymous = 'Anonymous'
 Authenticated = 'Authenticated'
 
 # Permissions
 Read = 'Read'
-Read = 'Read'
 Write = 'Write'
 Delete = 'Delete'
-All = lambda _: True
+Any = lambda _: True
 
 
 def walk(obj):
@@ -36,6 +34,27 @@ def walk(obj):
             obj = None
 
 
+def _get_acl_attr(obj):
+    try:
+        acl = obj.__acl__
+        if isinstance(acl, Callable):
+            acl = acl()
+        return acl
+    except AttributeError as e:
+        if "object has no attribute '__acl__'" in str(e):
+            return None
+        raise
+
+
+def get_acl(obj):
+    for obj in walk(obj):
+        acl = _get_acl_attr(obj)
+        if acl is None:
+            continue
+        return acl
+    return []
+
+
 def has_permission(permission, permissions):
     if isinstance(permissions, _compat.string_types + (_compat.text_type,)):
         return permission == permissions
@@ -43,27 +62,14 @@ def has_permission(permission, permissions):
         return permission in permissions
     elif isinstance(permissions, Callable):
         return permissions(permission)
-    else:
-        raise TypeError('permissions must be a string, container, or callable')
+    raise TypeError('permissions must be a string, container, or callable')
 
 
 def can(principals, permission, obj):
     for obj in walk(obj):
-        try:
-            acl = obj.__acl__
-        except AttributeError:
-            continue
-
-        if isinstance(acl, Callable):
-            acl = acl()
-
-        for ace in acl:
-            try:
-                action, principal, permissions = ace
-            except ValueError:
-                raise ValueError('ACL entry must be a three length tuple')
-
+        acl = get_acl(obj)
+        print(acl)
+        for action, principal, permissions in acl:
             if principal in principals and has_permission(permission, permissions):
                 return action == Allow
-
     return False
