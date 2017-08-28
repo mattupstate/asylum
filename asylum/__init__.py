@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
-    flask_asylum
-    ~~~~~~~~~~~~
+    asylum
+    ~~~~~~
 
-    Flask-Asylum top level package
+    Asylum top level package
 """

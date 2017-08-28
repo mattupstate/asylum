@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
-    flask_asylum._compat
-    ~~~~~~~~~~~~~~~~~~~~
+    asylum._compat
+    ~~~~~~~~~~~~~~
 
     Python compatability module
 """
