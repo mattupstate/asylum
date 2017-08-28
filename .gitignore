@@ -34,3 +34,5 @@ env/
 
 *.db
 *cache*
+.venv
+.vscode

@@ -1,6 +1,6 @@
 """
-Flask-Asylum
-============
+Asylum
+======
 """
 
 from setuptools import setup, find_packages
@@ -11,9 +11,9 @@ def get_requirements(suffix=''):
     return rv
 
 setup(
-    name='Flask-Asylum',
+    name='Asylum',
     version='0.1.0',
-    url='https://github.com/mattupstate/flask-asylum',
+    url='https://github.com/mattupstate/asylum',
     license='MIT',
     author='Matt Wright',
     author_email='matt@nobien.net',

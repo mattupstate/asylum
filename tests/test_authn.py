@@ -1,118 +1,57 @@
 # -*- coding: utf-8 -*-
 """
-    test_identity_policies
-    ~~~~~~~~~~~~~~~~~~~~~~
+    test_authn
+    ~~~~~~~~~~
 
-    Stock identity policy tests
+    authn module tests
 """
 
-import base64
+import pytest
 
-from flask import session
-
-from flask_asylum import acl
-from flask_asylum.core import Authentication, current_identity
-from flask_asylum.ident import SessionIdentityProvider, RememberMeCookieIdentityProvider, \
-    BasicAuthIdentityProvider, MultiIdentityProvider
+from asylum import core
 
 
-def test_session_provider(app, client, asylum):
-    asylum.identity_provider = SessionIdentityProvider()
+class InMemoryAuthenticationProvider(core.AuthenticationProvider):
+    """A very simple, username & plain-text-password authentication provider
+    that uses an in-memory user lookup
+    """
 
-    with client as c:
-        c.get('/')
-        assert 'identity' not in session
-        assert current_identity.uid == acl.Anonymous
+    def __init__(self, users):
+        self._users = users
 
-    with client as c:
-        response = client.get('/login?user=mary')
-        assert response.status_code == 200
-        assert session['identity'] == 'mary'
-
-    with client as c:
-        c.get('/')
-        assert session['identity'] == 'mary'
-        assert c.cookie_jar._cookies['localhost.local']['/']['session'] is not None
-        assert isinstance(current_identity._get_current_object(), Authentication)
-        assert current_identity.uid == 'mary'
-        assert current_identity.credentials is None
-
-    with client as c:
-        c.get('/logout')
-        assert 'identity' not in session
-        assert 'session' not in c.cookie_jar._cookies['localhost.local']['/']
-        assert current_identity.uid == acl.Anonymous
+    def authenticate(self, authentication):
+        username = authentication.identity
+        password = authentication.credentials
+        if self._users.get(username, None) == password:
+            return core.Authentication(username, None, True)
 
 
-def test_remember_me_cookie_provider(app, client, asylum):
-    asylum.identity_provider = RememberMeCookieIdentityProvider('secret')
-
-    with client as c:
-        c.get('/')
-        assert 'localhost.local' not in c.cookie_jar._cookies
-        assert current_identity.uid == acl.Anonymous
-
-    response = client.get('/login?user=mary')
-    assert response.status_code == 200
-    assert 'Set-Cookie' in response.headers
-
-    with client as c:
-        c.get('/')
-        assert isinstance(current_identity._get_current_object(), Authentication)
-        assert current_identity.uid == 'mary'
-        assert current_identity.credentials is None
-        cookie = c.cookie_jar._cookies['localhost.local']['/']['_remember_me']
-        assert cookie.value.startswith('mary|')
-
-    with client as c:
-        c.get('/logout')
-        assert current_identity.uid == acl.Anonymous
-        assert '_remember_me' not in c.cookie_jar._cookies['localhost.local']['/']
+in_memory_authn_provider = InMemoryAuthenticationProvider({
+    'mwright': 'password'
+})
 
 
-def test_http_basic_auth_provider(app, client, asylum):
-    asylum.identity_provider = BasicAuthIdentityProvider()
-
-    with client as c:
-        response = c.get('/')
-        assert current_identity.uid == acl.Anonymous
-        assert 'WWW-Authenticate' in response.headers
-
-    with client as c:
-        identity = base64.b64encode(b"mary:password").decode('utf-8')
-        response = c.get('/', headers={'Authorization': 'Basic %s' % identity})
-        assert isinstance(current_identity._get_current_object(), Authentication)
-        assert current_identity.uid == 'mary'
-        assert current_identity.credentials == 'password'
+def test_authentication_provider_base():
+    with pytest.raises(NotImplementedError):
+        core.AuthenticationProvider().authenticate(None)
 
 
-def test_multi_provider(app, client, asylum):
-    asylum.identity_provider = MultiIdentityProvider([
-        SessionIdentityProvider(),
-        RememberMeCookieIdentityProvider('secret')
-    ])
+def test_in_memory_authentication_provider():
+    authentication = in_memory_authn_provider.authenticate(
+        core.Authentication('mwright', 'password'))
+    assert isinstance(authentication, core.Authentication)
+    assert authentication.identity == 'mwright'
+    assert authentication.credentials is None
+    assert authentication.authenticated
 
-    with client as c:
-        c.get('/')
-        assert 'identity' not in session
-        assert current_identity.uid == acl.Anonymous
 
-    response = client.get('/login?user=mary')
-    assert response.status_code == 200
+def test_in_memory_authentication_provider_with_invalid_username():
+    authentication = in_memory_authn_provider.authenticate(
+        core.Authentication('bogus', 'password'))
+    assert authentication is None
 
-    with client as c:
-        c.get('/')
-        assert session['identity'] == 'mary'
-        assert isinstance(current_identity._get_current_object(), Authentication)
-        assert current_identity.uid == 'mary'
-        assert current_identity.credentials is None
-        assert c.cookie_jar._cookies['localhost.local']['/']['session'] is not None
-        cookie = c.cookie_jar._cookies['localhost.local']['/']['_remember_me']
-        assert cookie.value.startswith('mary|')
 
-    with client as c:
-        c.get('/logout')
-        assert current_identity.uid == acl.Anonymous
-        assert 'identity' not in session
-        assert 'session' not in c.cookie_jar._cookies['localhost.local']['/']
-        assert '_remember_me' not in c.cookie_jar._cookies['localhost.local']['/']
+def test_in_memory_authentication_provider_with_invalid_password():
+    authentication = in_memory_authn_provider.authenticate(
+        core.Authentication('mwright', 'bogus'))
+    assert authentication is None

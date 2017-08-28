@@ -1,40 +1,49 @@
 # -*- coding: utf-8 -*-
 """
-    test_authorization_policies
-    ~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    test_authz
+    ~~~~~~~~~~
 
-    Authorization policy tests
+    Authz module tests
 """
 
-from flask_asylum.authz import AuthorizationProvider
-from flask_asylum.ident import SessionIdentityProvider
+import pytest
+
+from asylum import core
 
 
-class GroupBasedAuthorizationProvider(AuthorizationProvider):
+class IdentityAuthorizationProvider(core.AuthorizationProvider):
+    """A very simple authorization provider that implicitly trusts the
+    principal as provided.
+    """
+
     def __init__(self):
-        self._groups = {
-            'admin': {'read', 'write', 'delete'},
-            'editor': {'read', 'write'}
-        }
-        self._users = {
-            'mary': {'admin', 'editor'},
-            'tina': {'editor'}
+        self._identities = {
+            'mwright': {'perm1', 'perm2'},
+            'kjones': {'perm1'}
         }
 
-    def can(self, identity, permission, **kwargs):
-        groups = self._users.get(identity.uid)
-        permissions = set([p for g in groups for p in self._groups.get(g, [])])
-        return permission in permissions
+    def _get_permissions(self, principal):
+        return self._identities.get(principal, [])
+
+    def can(self, authentication, permission, **kwargs):
+        return permission in self._get_permissions(authentication.identity)
 
 
-def test_custom_authz_provider(app, client, asylum):
-    asylum.identity_provider = SessionIdentityProvider()
-    asylum.authz_provider = GroupBasedAuthorizationProvider()
+def test_base_authorization_provider():
+    provider = core.AuthorizationProvider()
+    with pytest.raises(NotImplementedError):
+        provider.can(None, None);
 
-    with client as c:
-        c.get('/login?user=mary')
-        assert asylum.can('delete')
 
-    with client as c:
-        c.get('/login?user=tina')
-        assert asylum.cannot('delete')
+def test_identity_authorization_provider():
+    provider = IdentityAuthorizationProvider()
+
+    authentication = core.Authentication('mwright')
+    assert provider.can(authentication, 'perm1')
+    assert provider.can(authentication, 'perm2')
+    assert provider.cannot(authentication, 'perm3')
+
+    authentication = core.Authentication('kjones')
+    assert provider.can(authentication, 'perm1')
+    assert provider.cannot(authentication, 'perm2')
+    assert provider.cannot(authentication, 'perm3')
