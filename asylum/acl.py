@@ -67,9 +67,7 @@ def has_permission(permission, permissions):
 
 def can(principals, permission, obj):
     for obj in walk(obj):
-        acl = get_acl(obj)
-        print(acl)
-        for action, principal, permissions in acl:
+        for action, principal, permissions in get_acl(obj):
             if principal in principals and has_permission(permission, permissions):
                 return action == Allow
     return False
